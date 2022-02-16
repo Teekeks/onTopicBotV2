@@ -166,7 +166,7 @@ ap = ApplicationCommand(name='topic',
                         description='Suggest a new topic',
                         type=ApplicationCommandType.CHAT_INPUT)
 # register as local command on all servers
-client.register_command(ap, suggest_topic_command, False, None)
+client.register_command(ap, suggest_topic_command, True, None)
 
 
 def load_state():
