@@ -2,6 +2,8 @@ import asyncio
 import datetime
 
 from distee.client import Client
+from distee.components import Modal, ActionRow, TextInput, Button
+from distee.enums import TextInputType
 from distee.flags import Intents
 from distee.interaction import Interaction
 from distee.application_command import *
@@ -31,6 +33,7 @@ C_BLURPLE = 0x7289DA
 
 @client.interaction_handler('btn_approve')
 async def approve_interaction(inter: Interaction):
+    await inter.defer_send()
     msg = inter.message
     embed = msg.embeds[0]
     topic = embed.get('description')
@@ -58,15 +61,16 @@ async def approve_interaction(inter: Interaction):
     await msg.edit(embeds=[embed], components=[])
 
     # set interaction response
-    inter.response.embeds = [{
+    await inter.send_followup(embeds=[{
         'title': 'Topic approved',
         'description': f'{topic}\n\nApproved by <@{inter.member.id}>',
         'color': C_GREEN
-    }]
+    }])
 
 
 @client.interaction_handler('btn_deny')
 async def deny_interaction(inter: Interaction):
+    await inter.defer_send()
     msg = inter.message
     embed = msg.embeds[0]
     topic = embed.get('description')
@@ -78,28 +82,27 @@ async def deny_interaction(inter: Interaction):
     embed['color'] = C_RED
     await msg.edit(embeds=[embed], components=[])
 
-    inter.response.embeds = [{
+    await inter.send_followup(embeds=[{
         'title': 'Topic denied',
         'color': C_RED,
         'description': f'{topic}\n\nDenied by <@{inter.member.id}>'
-    }]
+    }])
 
 
-async def suggest_topic_command(inter: Interaction):
-    inter.response.ephemeral = True
-    topic = inter.data.options[0]['value']
-    if inter.channel_id.id != on_topic_channel_id:
-        inter.response.embeds = [{
-            'description': f'you can only use this command in the <#{on_topic_channel_id}> channel.',
-            'color': C_RED
-        }]
+@client.interaction_handler('topic_suggestion')
+async def topic_suggestion_callback(inter: Interaction):
+    topic = inter.data.components['topic']['value'].strip()
+    if len(topic) == 0:
+        await inter.send(embeds=[{'description': 'You have to actually suggest a topic!',
+                                  'color': C_RED}], ephemeral=True,
+                         components=[
+                             ActionRow([
+                                 Button('btn_retry',
+                                        label='Try again')
+                             ])
+                         ])
         return
-    if cooldown_till is not None:
-        inter.response.embeds = [{
-            'description': 'Topic suggestion is still on cooldown.',
-            'color': C_RED
-        }]
-        return
+    await inter.defer_send(ephemeral=True)
     guild = client.get_guild(inter.guild_id)
     review_channel: TextChannel = guild.get_channel(review_channel_id)
     await review_channel.send(
@@ -124,22 +127,44 @@ async def suggest_topic_command(inter: Interaction):
                 'custom_id': 'btn_deny'
             }]
         }])
-    inter.response.embeds = [{
+    await inter.send_followup(embeds=[{
         'title': 'Your topic was send to review.',
         'color': C_GREEN
-    }]
+    }], ephemeral=True)
+    pass
+
+
+@client.interaction_handler('btn_retry')
+async def suggest_topic_command(inter: Interaction):
+    if inter.channel_id.id != on_topic_channel_id:
+        await inter.send(embeds=[{
+            'description': f'You can only use this command in the <#{on_topic_channel_id}> channel.',
+            'color': C_RED
+        }], ephemeral=True)
+        return
+    if cooldown_till is not None:
+        await inter.send(embeds=[{
+            'description': 'Topic suggestion is still on cooldown.',
+            'color': C_RED
+        }], ephemeral=True)
+        return
+    modal = Modal('topic_suggestion',
+                  'Topic suggestion',
+                  components=[
+                    ActionRow([
+                        TextInput('topic',
+                                  'Your topic suggestion',
+                                  style=TextInputType.PARAGRAPH,
+                                  placeholder='The topic you want to suggest')
+                    ])
+                  ])
+    await inter.send_modal(modal)
 
 
 # register slash command
 ap = ApplicationCommand(name='topic',
                         description='Suggest a new topic',
                         type=ApplicationCommandType.CHAT_INPUT)
-ap.options = [
-    ApplicationCommandOption(type=ApplicationCommandOptionType.STRING,
-                             name='topic',
-                             description='The new topic you want to propose',
-                             required=True)
-]
 # register as local command on all servers
 client.register_command(ap, suggest_topic_command, False, None)
 
